@@ -1,0 +1,249 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {},
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "Prompt-User-Priviliged-role-assigned",
+            "location": "ukwest",
+            "tags": {
+                "LogicAppsCategory": "security",
+                "hidden-SentinelTemplateName": "Prompt-User",
+                "hidden-SentinelTemplateVersion": "1.1",
+                "hidden-SentinelWorkspaceId": "/subscriptions/b727f5d2-8b9d-4995-9451-32175981ce8d/resourceGroups/Sentinel/providers/microsoft.OperationalInsights/Workspaces/sentinel"
+            },
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Microsoft_Sentinel_incident": {
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "body": {
+                                    "callback_url": "@{listCallbackUrl()}"
+                                },
+                                "path": "/incident-creation"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Entities_-_Get_Accounts": {
+                            "runAfter": {},
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "body": "@triggerBody()?['object']?['properties']?['relatedEntities']",
+                                "path": "/entities/account"
+                            }
+                        },
+                        "For_each": {
+                            "foreach": "@body('Entities_-_Get_Accounts')?['Accounts']",
+                            "actions": {
+                                "Condition_2": {
+                                    "actions": {
+                                        "Add_comment_to_incident_(V3)": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "body": {
+                                                    "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                    "message": "<p>@{body('Get_user')?['displayName']} confirms they completed the action that triggered the alert. &nbsp;Closing the incident.</p>"
+                                                },
+                                                "path": "/Incidents/Comment"
+                                            }
+                                        },
+                                        "Update_incident": {
+                                            "runAfter": {
+                                                "Add_comment_to_incident_(V3)": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "put",
+                                                "body": {
+                                                    "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                    "status": "Closed",
+                                                    "classification": {
+                                                        "ClassificationAndReason": "BenignPositive - SuspiciousButExpected",
+                                                        "ClassificationReasonText": "User Confirmed it was them"
+                                                    }
+                                                },
+                                                "path": "/Incidents"
+                                            }
+                                        }
+                                    },
+                                    "runAfter": {
+                                        "Send_approval_email": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "else": {
+                                        "actions": {
+                                            "Add_comment_to_incident_(V3)_2": {
+                                                "type": "ApiConnection",
+                                                "inputs": {
+                                                    "host": {
+                                                        "connection": {
+                                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                        }
+                                                    },
+                                                    "method": "post",
+                                                    "body": {
+                                                        "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                        "message": "<p>@{body('Get_user')?['displayName']} confirms they did not complete the action. Further investigation is needed.</p>"
+                                                    },
+                                                    "path": "/Incidents/Comment"
+                                                }
+                                            },
+                                            "Send_an_email_(V2)": {
+                                                "runAfter": {
+                                                    "Add_comment_to_incident_(V3)_2": [
+                                                        "Succeeded"
+                                                    ]
+                                                },
+                                                "type": "ApiConnection",
+                                                "inputs": {
+                                                    "host": {
+                                                        "connection": {
+                                                            "name": "@parameters('$connections')['office365-1']['connectionId']"
+                                                        }
+                                                    },
+                                                    "method": "post",
+                                                    "body": {
+                                                        "To": "support@valto.co.uk",
+                                                        "Subject": "Incident @{triggerBody()?['object']?['properties']?['incidentNumber']} - @{triggerBody()?['object']?['properties']?['title']}",
+                                                        "Body": "<p class=\"editor-paragraph\">New alert from Microsoft Sentinel.<br>Please investigate ASAP.<br>Severity : @{triggerBody()?['object']?['properties']?['severity']}<br>Description: @{triggerBody()?['object']?['properties']?['description']}<br><br>@{body('Get_user')?['displayName']} user confirmed they did not complete the action.</p>",
+                                                        "Importance": "Normal"
+                                                    },
+                                                    "path": "/v2/Mail"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "expression": {
+                                        "and": [
+                                            {
+                                                "equals": [
+                                                    "@body('Send_approval_email')?['SelectedOption']",
+                                                    "This was me"
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    "type": "If"
+                                },
+                                "Get_user": {
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['azuread-1']['connectionId']"
+                                            }
+                                        },
+                                        "method": "get",
+                                        "path": "/v1.0/users/@{encodeURIComponent(concat(items('For_each')?['Name'], '@' ,items('For_each')?['UPNSuffix']))}"
+                                    }
+                                },
+                                "Send_approval_email": {
+                                    "runAfter": {
+                                        "Get_user": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "ApiConnectionWebhook",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['office365-1']['connectionId']"
+                                            }
+                                        },
+                                        "body": {
+                                            "NotificationUrl": "@{listCallbackUrl()}",
+                                            "Message": {
+                                                "To": "@body('Get_user')?['mail']",
+                                                "Body": "Hi @{body('Get_user')?['displayName']}\n\nCan you please confirm you have assigned a new admin role?\n\nDescription: @{triggerBody()?['object']?['properties']?['description']}\n\nThanks",
+                                                "Importance": "High",
+                                                "HideHTMLMessage": false,
+                                                "ShowHTMLConfirmationDialog": false,
+                                                "Subject": "Security Alert: @{triggerBody()?['object']?['properties']?['title']}",
+                                                "Options": "This was me, This was not me"
+                                            }
+                                        },
+                                        "path": "/approvalmail/$subscriptions"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Entities_-_Get_Accounts": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach"
+                        }
+                    }
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azuresentinel": {
+                                "id": "/subscriptions/b727f5d2-8b9d-4995-9451-32175981ce8d/providers/Microsoft.Web/locations/ukwest/managedApis/azuresentinel",
+                                "connectionId": "/subscriptions/b727f5d2-8b9d-4995-9451-32175981ce8d/resourceGroups/Sentinel/providers/Microsoft.Web/connections/azuresentinel-Prompt-User-Incident",
+                                "connectionName": "azuresentinel-Prompt-User-Incident",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                }
+                            },
+                            "office365-1": {
+                                "id": "/subscriptions/b727f5d2-8b9d-4995-9451-32175981ce8d/providers/Microsoft.Web/locations/ukwest/managedApis/office365",
+                                "connectionId": "/subscriptions/b727f5d2-8b9d-4995-9451-32175981ce8d/resourceGroups/Sentinel/providers/Microsoft.Web/connections/office365-1",
+                                "connectionName": "office365-1"
+                            },
+                            "azuread-1": {
+                                "id": "/subscriptions/b727f5d2-8b9d-4995-9451-32175981ce8d/providers/Microsoft.Web/locations/ukwest/managedApis/azuread",
+                                "connectionId": "/subscriptions/b727f5d2-8b9d-4995-9451-32175981ce8d/resourceGroups/Sentinel/providers/Microsoft.Web/connections/azuread-1",
+                                "connectionName": "azuread-1"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
