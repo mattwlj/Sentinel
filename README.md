@@ -31,3 +31,8 @@ Prompt User to confirm account created and deleted
 <a href="https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fmattwlj%2FSentinel%2Frefs%2Fheads%2Fmain%2FPromt%2520User%2520Account%2520created%2520and%2520deleted.json" target="_blank">
     <img src="https://aka.ms/deploytoazurebutton"/>
 </a>
+
+NEW Block User
+<a href="https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fmattwlj%2FSentinel%2Frefs%2Fheads%2Fmain%2FNew%2520Block%2520User.json" target="_blank">
+    <img src="https://aka.ms/deploytoazurebutton"/>
+</a>
